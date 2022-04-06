@@ -5,6 +5,8 @@ import requests
 from datetime import datetime
 import json
 from RainConverter import selector as EtatMeteo
+import csv as csv
+# importing pandas module
 
 app = Flask(__name__)
 
@@ -13,12 +15,12 @@ LONGITUDE = 1.858686
 LATITUDE = 50.95129
 ORDER = [
     "EtatMeteo",
-    "Pression", 
+    "Pression",
     "VentDeg",
-    "VentVitesse", 
+    "VentVitesse",
     "Datetime"
 ]
-app.config['MQTT_BROKER_URL'] = '192.168.96.219'
+app.config['MQTT_BROKER_URL'] = '192.168.19.219'
 app.config['MQTT_USERNAME'] = 'pi'
 app.config['MQTT_PASSWORD'] = 'raspberrypi'
 app.config['MQTT_BROKER_PORT'] = 1883
@@ -28,15 +30,19 @@ temp1 = NULL
 temp2 = NULL
 hum1 = NULL
 hum2 = NULL
-
+fields = ['temp1', 'temp2', 'hum1', 'hum2', 'state',
+          'pression', 'direction', 'speed', 'date']
 # Conversion du Fahrenheit au Celcius
+
+
 def F2C(F):
     return (F - 32) * 5 / 9
+
 
 def get_get():
     request = requests.get(API_URL.format("calais"))
     request = request.json()
-    # La reponse qu'on va donner 
+    # La reponse qu'on va donner
     response = {}
     # Traitement sur temperature
     response["Ressentie"] = F2C(request["main"]["feels_like"])
@@ -50,7 +56,7 @@ def get_get():
     # Humidity
     response["Humidite"] = request["main"]["humidity"]
     # Temps de mesure
-    response["Datetime"] = datetime.utcnow().strftime("%d/%m/%Y %H:%M:%S")
+    response["Datetime"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
     # Vent
     response["VentDeg"] = request["wind"]["deg"]
@@ -61,13 +67,15 @@ def get_get():
         response["EtatMeteo"] = EtatMeteo[request["weather"][0]["id"]]
     else:
         response["EtatMeteo"] = "Non définit"
-    response = eval(json.dumps(response, indent = 4))
+    response = eval(json.dumps(response, indent=4))
     return response
+
 
 def writing(response):
     with open("tmp.txt", "a") as f:
         for i in range(len(ORDER)):
             f.write(str(response[ORDER[i]]) + "\n")
+
 
 @mqtt.on_connect()
 def handle_connect(client, userdata, flags, rc):
@@ -75,6 +83,7 @@ def handle_connect(client, userdata, flags, rc):
     mqtt.subscribe('esp1/dht/humidity')
     mqtt.subscribe('esp2/dht/temperature')
     mqtt.subscribe('esp2/dht/humidity')
+
 
 @mqtt.on_message()
 def handle_mqtt_message(client, userdata, message):
@@ -88,13 +97,22 @@ def handle_mqtt_message(client, userdata, message):
     if message.topic == 'esp2/dht/humidity':
         hum2 = float(message.payload.decode())
     if temp1 != NULL and temp2 != NULL and hum1 != NULL and hum2 != NULL:
-        with open("tmp.txt","w") as fi:
-            fi.write(str(temp1)+"\n"+str(temp2)+"\n"+str(hum1)+"\n"+str(hum2)+"\n")
-        writing(get_get())
+        # with open("tmp.txt", "w") as fi:
+        #     fi.write(str(temp1)+"\n"+str(temp2)+"\n" +
+        #              str(hum1)+"\n"+str(hum2)+"\n")
+        # writing(get_get())
+        row = [temp1, temp2, hum1, hum2]+[str(get_get()[ORDER[i]])
+                                          for i in range(len(ORDER))]
+        with open('tmp.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(fields)
+            # print(row)
+            writer.writerow(row)
         temp1 = NULL
         temp2 = NULL
         hum1 = NULL
         hum2 = NULL
-    
+
+
 if __name__ == "__main__":
-  app.run()
+    app.run()
